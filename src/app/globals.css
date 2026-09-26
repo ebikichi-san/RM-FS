@@ -1,8 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #020617;
+  --foreground: #e2e8f0;
 }
 
 @theme inline {
@@ -12,15 +12,44 @@
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(1200px 500px at 10% -10%, rgba(56, 189, 248, 0.16), transparent),
+    radial-gradient(800px 400px at 100% 0%, rgba(244, 63, 94, 0.12), transparent),
+    var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans), sans-serif;
+}
+
+@media print {
+  header,
+  nav,
+  button {
+    display: none !important;
+  }
+  body {
+    background: white;
+    color: black;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+.security-content input,
+.security-content textarea {
+  user-select: text;
+}
+
+body.capture-warn::after {
+  content: "画面キャプチャは記録対象です / CONFIDENTIAL";
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  background: rgba(2, 6, 23, 0.72);
+  color: #fda4af;
+  font-size: 1.25rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  pointer-events: none;
 }
