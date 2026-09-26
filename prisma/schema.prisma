@@ -1,0 +1,301 @@
+// Production target is PostgreSQL. SQLite is used for local/dev so the
+// multi-tenant RM-FS engine can run without a hosted database.
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../src/generated/prisma"
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum TenantType {
+  DIRECT
+  PARTNER
+}
+
+enum UserRole {
+  SYSTEM_ADMIN
+  PARTNER_CONSULTANT
+  CLIENT_ADMIN
+  RESPONDENT
+}
+
+enum PositionLevel {
+  EXECUTIVE
+  MANAGER
+  STAFF
+}
+
+enum EmploymentType {
+  REGULAR
+  CONTRACT
+  DISPATCH
+  PART_TIME
+}
+
+enum SystemCategory {
+  SALES_PROCUREMENT
+  BACKOFFICE
+  FIELD_MANUFACTURING
+  RD_TECH
+  OTHER
+}
+
+enum AnswerValue {
+  YES
+  NO
+  UNKNOWN
+}
+
+enum TaskPriority {
+  CRITICAL
+  HIGH
+  MEDIUM
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  DONE
+}
+
+enum OverallStatus {
+  GREEN
+  YELLOW
+  RED
+}
+
+enum PdcaStage {
+  PLAN
+  DO
+  CHECK
+  ACTION
+}
+
+model Tenant {
+  id                 String   @id @default(cuid())
+  name               String
+  type               TenantType
+  isolationLevel     String   @default("chinese_wall")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+  users              User[]
+  departments        DepartmentMaster[]
+  projects           AssessmentProject[]
+  learningLogs       AiLearningLog[]
+}
+
+model DepartmentMaster {
+  id              String          @id @default(cuid())
+  tenantId        String
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name            String
+  industryPreset  String?
+  systemCategory  SystemCategory
+  isFreeText      Boolean         @default(false)
+  sessions        ResponseSession[]
+  users           User[]
+  @@unique([tenantId, name])
+}
+
+model User {
+  id              String          @id @default(cuid())
+  tenantId        String
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email           String?
+  displayName     String
+  role            UserRole
+  positionLevel   PositionLevel
+  employmentType  EmploymentType
+  departmentId    String?
+  department      DepartmentMaster? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  accessEnabled   Boolean         @default(true)
+  sessions        ResponseSession[]
+  assignedTasks   ActionTask[]
+  @@index([tenantId, role])
+  @@index([departmentId])
+}
+
+model AccessGrant {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  label       String?
+  enabled     Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model RiskDomain {
+  id          Int      @id
+  code        String   @unique
+  nameJa      String
+  nameEn      String
+  weight      Float    @default(1)
+  questions   Question[]
+}
+
+model Question {
+  id                 String   @id @default(cuid())
+  code               String   @unique
+  domainId           Int
+  domain             RiskDomain @relation(fields: [domainId], references: [id])
+  title              String
+  text               String
+  importanceLevel    Int      @default(3)
+  isRedCardTrigger   Boolean  @default(false)
+  redCardReason      String?
+  taskTitle          String
+  taskPriority       TaskPriority
+  taskDifficulty     Int      @default(2)
+  estimatedHours     Float
+  recommendedRole    String
+  taskStepsJson      String
+  responses          AssessmentResponse[]
+  metrics            QuestionPerformanceMetric[]
+}
+
+model RedCardRule {
+  id          String  @id @default(cuid())
+  code        String  @unique
+  questionCode String
+  triggerOnUnknown Boolean @default(true)
+  description String
+}
+
+model AssessmentProject {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String
+  status      String   @default("open")
+  createdAt   DateTime @default(now())
+  sessions    ResponseSession[]
+  reports     DiagnosticReport[]
+  tasks       ActionTask[]
+}
+
+model ResponseSession {
+  id              String   @id @default(cuid())
+  projectId       String
+  project         AssessmentProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId          String?
+  user            User?    @relation(fields: [userId], references: [id])
+  departmentId    String
+  department      DepartmentMaster @relation(fields: [departmentId], references: [id])
+  positionLevel   PositionLevel
+  employmentType  EmploymentType
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+  responses       AssessmentResponse[]
+}
+
+model AssessmentResponse {
+  id            String   @id @default(cuid())
+  sessionId     String
+  session       ResponseSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  questionId    String
+  question      Question @relation(fields: [questionId], references: [id])
+  answerValue   AnswerValue
+  score         Int
+  gapFlag       Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  @@unique([sessionId, questionId])
+}
+
+model DiagnosticReport {
+  id                String   @id @default(cuid())
+  projectId         String
+  project           AssessmentProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  overallScore      Float
+  overallStatus     OverallStatus
+  gapIndex          Float
+  highAlert         Boolean
+  redCardForced     Boolean
+  domainScoresJson  String
+  redCardsJson      String
+  gapBreakdownJson  String
+  viewerMasked      Boolean  @default(false)
+  generatedAt       DateTime @default(now())
+}
+
+model DiagnosisResult {
+  id                 String   @id @default(cuid())
+  projectId          String
+  sessionId          String?
+  userId             String?
+  departmentName     String
+  positionLevel      String
+  overallScore       Float
+  overallStatus      String
+  gapIndex           Float
+  roleGapIndex       Float
+  highAlert          Boolean
+  redCardForced      Boolean
+  unknownCount       Int
+  unknownRate        Float
+  answeredCount      Int
+  answersJson        String
+  domainsJson        String
+  domainGapsJson     String
+  redCardsJson       String
+  blackBoxRisksJson  String
+  diagnosisJson      String
+  supabaseId         String?
+  createdAt          DateTime @default(now())
+  @@index([projectId, userId, createdAt])
+}
+
+model ActionTask {
+  id                String   @id @default(cuid())
+  projectId         String
+  project           AssessmentProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  originQuestionCode String
+  title             String
+  priority          TaskPriority
+  difficulty        Int
+  estimatedHours    Float
+  recommendedRole   String
+  stepsJson         String
+  status            TaskStatus @default(TODO)
+  recoveryPoints    Float    @default(8)
+  assignedUserId    String?
+  assignedUser      User?    @relation(fields: [assignedUserId], references: [id])
+  completedAt       DateTime?
+  createdAt         DateTime @default(now())
+  efficacy          TaskEfficacyScore[]
+}
+
+model AiLearningLog {
+  id          String    @id @default(cuid())
+  tenantId    String?
+  tenant      Tenant?   @relation(fields: [tenantId], references: [id])
+  stage       PdcaStage
+  hypothesis  String
+  payloadJson String
+  promoted    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+}
+
+model QuestionPerformanceMetric {
+  id            String   @id @default(cuid())
+  questionId    String
+  question      Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  dropOffRate   Float    @default(0)
+  unknownRate   Float    @default(0)
+  gapRate       Float    @default(0)
+  sampleSize    Int      @default(0)
+  updatedAt     DateTime @updatedAt
+}
+
+model TaskEfficacyScore {
+  id          String   @id @default(cuid())
+  taskId      String
+  task        ActionTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  beforeScore Float
+  afterScore  Float
+  delta       Float
+  createdAt   DateTime @default(now())
+}
